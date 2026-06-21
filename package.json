@@ -1,18 +1,19 @@
 {
-  "name": "antigravity-usage-tracker",
-  "displayName": "Antigravity Usage Tracker",
+  "name": "antigravitycli-usage-stats",
+  "displayName": "Antigravity CLI Usage Stats",
   "description": "Shows Antigravity CLI model quotas, including hourly and weekly quota buckets when available.",
-  "version": "0.2.0",
+  "version": "0.1.0",
   "publisher": "mdsameersakib",
   "author": "Md. Sameer Sakib <mdsameersakib@gmail.com>",
+  "icon": "favicon/web-app-manifest-512x512.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mdsameersakib/antigravity-usage-tracker.git"
+    "url": "https://github.com/mdsameersakib/Lensly-Website.git"
   },
   "bugs": {
-    "url": "https://github.com/mdsameersakib/antigravity-usage-tracker/issues"
+    "url": "https://github.com/mdsameersakib/Lensly-Website/issues"
   },
-  "homepage": "https://github.com/mdsameersakib/antigravity-usage-tracker#readme",
+  "homepage": "https://github.com/mdsameersakib/Lensly-Website#readme",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"

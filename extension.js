@@ -34,7 +34,7 @@ function activate(context) {
 
   context.subscriptions.push(
     statusBar,
-    vscode.commands.registerCommand("antigravityStats.refresh", () => refresh(true)),
+    vscode.commands.registerCommand("antigravityStats.refresh", () => refresh(true, true)),
     vscode.commands.registerCommand("antigravityStats.showPanel", showPanel),
     vscode.commands.registerCommand("antigravityStats.openSettings", () => {
       vscode.commands.executeCommand("workbench.action.openSettings", "antigravityStats");
@@ -68,11 +68,16 @@ function scheduleRefresh(context) {
   context.subscriptions.push({ dispose: () => clearInterval(refreshTimer) });
 }
 
-async function refresh(showErrors) {
+async function refresh(showErrors, isUserTriggered = false) {
   if (isRefreshing) {
     return;
   }
   isRefreshing = true;
+
+  if (isUserTriggered) {
+    statusBar.text = "$(sync~spin) Stats";
+    statusBar.backgroundColor = undefined;
+  }
 
   try {
     const snapshot = await collectSnapshot();
@@ -132,6 +137,33 @@ async function fetchRawQuota() {
   }
 }
 
+async function fetchAllRawQuotaEndpoints() {
+  const processInfo = await detectAntigravityProcess();
+  const ports = await getListeningPorts(processInfo.pid);
+  const apiPort = await findWorkingPort(ports, processInfo.csrfToken);
+
+  const endpointsToTry = ["userQuotaSummary", "userStatus", "commandModelConfigs"];
+  const results = {};
+
+  for (const key of endpointsToTry) {
+    try {
+      const raw = await makeRequest(apiPort, processInfo.extensionPort, processInfo.csrfToken, LIVE_ENDPOINTS[key], defaultRequestBody());
+      let json;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        results[key] = { ok: false, error: "Response was not valid JSON", rawText: raw.slice(0, 500) };
+        continue;
+      }
+      results[key] = { ok: true, json };
+    } catch (error) {
+      results[key] = { ok: false, error: error.message };
+    }
+  }
+
+  return results;
+}
+
 function redactRawQuota(json) {
   const clone = JSON.parse(JSON.stringify(json));
   walkObject(clone, (node) => {
@@ -149,16 +181,37 @@ function redactRawQuota(json) {
 
 async function dumpRawQuota() {
   try {
-    const raw = await fetchRawQuota();
-    const redacted = redactRawQuota(raw.json);
-    const text = `// Antigravity raw quota response (shape: ${raw.shape})\n` +
-      `// Email fields have been redacted. Please double-check before sharing.\n` +
+    const results = await fetchAllRawQuotaEndpoints();
+
+    const sections = [];
+    for (const key of ["userQuotaSummary", "userStatus", "commandModelConfigs"]) {
+      const result = results[key];
+      sections.push(`// ===== ${key} =====`);
+      if (!result) {
+        sections.push("// (not attempted)\n");
+        continue;
+      }
+      if (!result.ok) {
+        sections.push(`// FAILED: ${result.error}`);
+        if (result.rawText) {
+          sections.push(`// raw text (first 500 chars): ${result.rawText}`);
+        }
+        sections.push("");
+        continue;
+      }
+      sections.push(JSON.stringify(redactRawQuota(result.json), null, 2));
+      sections.push("");
+    }
+
+    const text = `// Antigravity raw quota responses from all 3 endpoints.\n` +
+      `// Email fields are auto-redacted. Please scan once more before sharing\n` +
+      `// (look for tokens, keys, or anything else sensitive) and remove if found.\n` +
       `// This is for debugging the Weekly Limit calculation only.\n\n` +
-      JSON.stringify(redacted, null, 2);
+      sections.join("\n");
 
     const doc = await vscode.workspace.openTextDocument({ content: text, language: "jsonc" });
     await vscode.window.showTextDocument(doc, { preview: false });
-    vscode.window.showInformationMessage("Antigravity Stats: Raw quota JSON opened in a new editor tab. Review it, then share it to help fix the Weekly Limit calculation.");
+    vscode.window.showInformationMessage("Antigravity Stats: Raw quota JSON (all endpoints) opened in a new editor tab.");
   } catch (error) {
     vscode.window.showWarningMessage(`Antigravity Stats: Could not fetch raw quota JSON — ${error.message}`);
   }
@@ -225,7 +278,7 @@ async function getListeningPorts(pid) {
 async function findWorkingPort(ports, csrfToken) {
   for (const port of ports) {
     try {
-      await makeHttpsRequest(port, csrfToken, LIVE_ENDPOINTS.unleash, unleashRequestBody());
+      await makeHttpsRequest(port, csrfToken, LIVE_ENDPOINTS.unleash, unleashRequestBody(), { timeout: 1500 });
       return port;
     } catch {
       // Try the next local port.
@@ -245,8 +298,8 @@ function makeRequest(httpsPort, httpPort, csrfToken, requestPath, body) {
   });
 }
 
-function makeHttpsRequest(port, csrfToken, requestPath, body) {
-  return makeNodeRequest(https, port, csrfToken, requestPath, body, { rejectUnauthorized: false });
+function makeHttpsRequest(port, csrfToken, requestPath, body, extraOptions = {}) {
+  return makeNodeRequest(https, port, csrfToken, requestPath, body, { rejectUnauthorized: false, ...extraOptions });
 }
 
 function makeHttpRequest(port, csrfToken, requestPath, body) {
@@ -452,10 +505,6 @@ function getGroupedQuotas(models, availablePromptCredits = null) {
       };
     });
 
-    // IMPORTANT: when we cannot find real weekly data, we must NOT invent a
-    // fake "100% / full quota" value. That would silently lie to the user.
-    // Instead we mark remainingFraction as null, which the formatter renders
-    // as "Unknown" rather than a false "Quota available".
     let weeklyBucket = buckets.find((b) => b.label === "Weekly Limit");
     if (!weeklyBucket) {
       weeklyBucket = {
@@ -467,19 +516,6 @@ function getGroupedQuotas(models, availablePromptCredits = null) {
         raw: {}
       };
       buckets.push(weeklyBucket);
-    }
-
-    // Best-effort estimate for Gemini's weekly bucket using prompt credits,
-    // ONLY used as a fallback when no real weekly bucket was already parsed
-    // directly from the API response. This guessed 500-credit cap is not
-    // verified against real account data yet -- see dumpRawQuota command.
-    if (
-      grp.name === "GEMINI MODELS" &&
-      weeklyBucket.remainingFraction === null &&
-      typeof availablePromptCredits === "number"
-    ) {
-      weeklyBucket.remainingFraction = Math.max(0, Math.min(1.0, availablePromptCredits / 500));
-      weeklyBucket.estimated = true;
     }
 
     const hasFiveHour = buckets.some((b) => b.label === "Five Hour Limit");
@@ -512,17 +548,24 @@ function getGroupedQuotas(models, availablePromptCredits = null) {
 }
 
 
-function formatGroupedBucket(bucket) {
+function getPercentageColor(percent) {
+  if (percent >= 76) return "#4CAF50";
+  if (percent >= 26) return "#FF9800";
+  if (percent >= 11) return "#FF5722";
+  return "#D32F2F";
+}
+
+function formatGroupedBucket(bucket, useHtml = false) {
   if (typeof bucket.remainingFraction !== "number") {
-    return "Unknown (Antigravity did not report this value)";
+    return "Unknown";
   }
   const percent = Math.round(bucket.remainingFraction * 100);
-  const estimateNote = bucket.estimated ? " (estimated)" : "";
-  if (percent >= 100) {
-    return `Quota available${estimateNote}`;
-  }
+  const color = getPercentageColor(percent);
+  const percentText = useHtml
+    ? `<span style="color:${color};"><b>${percent}% remaining</b></span>`
+    : `${percent}% remaining`;
   const refreshes = bucket.resetTime ? ` · Refreshes in ${formatDuration(bucket.resetTime)}` : "";
-  return `${percent}% remaining${estimateNote}${refreshes}`;
+  return `${percentText}${refreshes}`;
 }
 
 function formatDuration(date) {
@@ -750,9 +793,14 @@ function updateStatusBar(snapshot) {
   const config = getConfig();
   const mode = config.get("statusBarMode", "lowest");
   const bestQuota = selectStatusQuota(snapshot.liveQuota.models, mode);
-  const quotaText = bestQuota ? `${bestQuota.labelShort} ${formatStatusPercent(bestQuota.remainingPercent)}` : "live off";
+  let quotaText = "live off";
+  if (bestQuota) {
+    const percent = formatStatusPercent(bestQuota.remainingPercent);
+    const duration = bestQuota.resetTime ? ` - ${formatDuration(bestQuota.resetTime)}` : "";
+    quotaText = `${percent}${duration}`;
+  }
 
-  statusBar.text = `$(rocket) AG ${quotaText}`;
+  statusBar.text = `$(rocket) ${quotaText}`;
 
   const warningThreshold = config.get("warningRemainingPercent", 20);
   const isWarning = bestQuota && bestQuota.remainingPercent <= warningThreshold;
@@ -776,7 +824,7 @@ function selectStatusQuota(models, mode) {
   return {
     ...item.model,
     bucket: item.bucket,
-    labelShort: `${compactModelLabel(item.model.label)} ${item.bucket.label}`,
+    labelShort: `${compactModelLabel(item.model.label)} ${item.bucket.label === "Five Hour Limit" ? "5h" : item.bucket.label}`,
     remainingPercent: typeof item.bucket.remainingFraction === "number" ? Math.round(item.bucket.remainingFraction * 100) : null
   };
 }
@@ -795,7 +843,7 @@ function formatStatusPercent(value) {
 
 function buildTooltip(snapshot) {
   const lines = [];
-  lines.push("**Antigravity CLI Usage Quota**");
+  lines.push("**Antigravity CLI Quota Summary**");
   lines.push("");
 
   if (snapshot.liveQuota.error) {
@@ -804,9 +852,13 @@ function buildTooltip(snapshot) {
   } else if (snapshot.liveQuota.models.length > 0) {
     const groups = getGroupedQuotas(snapshot.liveQuota.models, snapshot.liveQuota.availablePromptCredits);
     for (const group of groups) {
-      lines.push(`**${group.name}** *(${group.description})*  `);
-      for (const bucket of group.buckets) {
-        lines.push(`${bucket.label}: ${formatGroupedBucket(bucket)}  `);
+      lines.push(`**${group.name}**`);
+      lines.push("");
+      const fiveHourBucket = group.buckets.find((b) => b.label === "Five Hour Limit");
+      if (fiveHourBucket) {
+        lines.push(`5h Limit: ${formatGroupedBucket(fiveHourBucket, true)}`);
+      } else {
+        lines.push(`5h Limit: Unknown`);
       }
       lines.push("");
     }
@@ -815,7 +867,7 @@ function buildTooltip(snapshot) {
     lines.push("");
   }
 
-  lines.push("[$(sync) Refresh](command:antigravityStats.refresh)&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;[$(link-external) Open Details](command:antigravityStats.showPanel)");
+  lines.push("[$(sync) Refresh](command:antigravityStats.refresh) &nbsp;•&nbsp; [$(link-external) Open Details](command:antigravityStats.showPanel)");
 
   return lines.join("\n");
 }
@@ -884,7 +936,8 @@ function renderPanel(snapshot) {
 
       <section>
         <h2>Notes</h2>
-        <p>This extension only displays Antigravity quota data returned by the running local Antigravity API. It does not estimate quotas from prompt counts or local logs.</p>
+        <p>This extension displays live usage data fetched directly from your local Antigravity API.</p>
+        <p style="margin-top: 8px;"><strong>Weekly Limits:</strong> These are processed on Google's cloud servers and are not exposed via the local API, so they are not shown here.</p>
       </section>
     </main>
   `);
@@ -898,14 +951,15 @@ function renderQuotaCards(models, availablePromptCredits) {
 
   return `<div class="quota-list">${groups
     .map((group) => {
+      const fiveHourBucket = group.buckets.find((b) => b.label === "Five Hour Limit");
       return `
         <article class="quota-card">
           <div class="quota-heading" style="display: block;">
             <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 4px;">${escapeHtml(group.name)}</h3>
-            <span style="font-size: 12px; color: var(--muted);">Models within this group: ${escapeHtml(group.description)}</span>
+            <span style="font-size: 12px; color: var(--muted);">(${escapeHtml(group.description)})</span>
           </div>
           <div class="bucket-list" style="margin-top: 18px;">
-            ${group.buckets.map((bucket) => bucketRow(bucket)).join("")}
+            ${fiveHourBucket ? bucketRow(fiveHourBucket) : `<div class="notice">No quota data available.</div>`}
           </div>
         </article>
       `;
@@ -919,10 +973,10 @@ function bucketRow(bucket) {
   return `
     <div class="bucket-row" style="margin-top: 16px;">
       <div class="bucket-title" style="display: flex; justify-content: space-between; align-items: baseline;">
-        <span style="font-size: 13px; font-weight: 600;">${escapeHtml(bucket.label)}</span>
-        <strong style="font-size: 12px; font-weight: 500; color: var(--muted);">${escapeHtml(formatGroupedBucket(bucket))}</strong>
+        <span style="font-size: 13px; font-weight: 600;">5h Limit</span>
+        <strong style="font-size: 12px; font-weight: 500; color: var(--muted);">${formatGroupedBucket(bucket, true)}</strong>
       </div>
-      ${hasData ? `<div class="bar" style="margin: 8px 0 0 0;"><span style="width:${Math.max(0, Math.min(100, percent))}%"></span></div>` : ""}
+      ${hasData ? `<div class="bar" style="margin: 8px 0 0 0;"><span style="width:${Math.max(0, Math.min(100, percent))}%; background-color: ${getPercentageColor(percent)};"></span></div>` : ""}
     </div>
   `;
 }
