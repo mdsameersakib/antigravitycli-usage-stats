@@ -1,0 +1,81 @@
+{
+  "name": "antigravity-usage-tracker",
+  "displayName": "Antigravity Usage Tracker",
+  "description": "Shows Antigravity CLI model quotas, including hourly and weekly quota buckets when available.",
+  "version": "0.2.0",
+  "publisher": "mdsameersakib",
+  "author": "Md. Sameer Sakib <mdsameersakib@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mdsameersakib/antigravity-usage-tracker.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mdsameersakib/antigravity-usage-tracker/issues"
+  },
+  "homepage": "https://github.com/mdsameersakib/antigravity-usage-tracker#readme",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:antigravityStats.refresh",
+    "onCommand:antigravityStats.showPanel"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "antigravityStats.refresh",
+        "title": "Antigravity Stats: Refresh"
+      },
+      {
+        "command": "antigravityStats.showPanel",
+        "title": "Antigravity Stats: Show Usage Panel"
+      },
+      {
+        "command": "antigravityStats.openSettings",
+        "title": "Antigravity Stats: Open Settings"
+      },
+      {
+        "command": "antigravityStats.dumpRawQuota",
+        "title": "Antigravity Stats: Dump Raw Quota JSON (debug)"
+      }
+    ],
+    "configuration": {
+      "title": "Antigravity Usage Tracker",
+      "properties": {
+        "antigravityStats.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 15,
+          "minimum": 5,
+          "description": "How often to refresh usage information."
+        },
+        "antigravityStats.statusBarMode": {
+          "type": "string",
+          "enum": [
+            "lowest",
+            "first"
+          ],
+          "default": "lowest",
+          "description": "Which quota to summarize in the status bar."
+        },
+        "antigravityStats.warningRemainingPercent": {
+          "type": "number",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 99,
+          "description": "Remaining quota percentage that changes the status bar into warning state."
+        },
+        "antigravityStats.showAccountEmail": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the Antigravity account email in the usage panel when the live API returns it."
+        }
+      }
+    }
+  }
+}
