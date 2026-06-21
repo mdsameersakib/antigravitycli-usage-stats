@@ -2,7 +2,7 @@
   "name": "antigravitycli-usage-stats",
   "displayName": "Antigravity CLI Usage Stats",
   "description": "Shows Antigravity CLI model quotas, including hourly and weekly quota buckets when available.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "mdsameersakib",
   "author": "Md. Sameer Sakib <mdsameersakib@gmail.com>",
   "icon": "favicon/web-app-manifest-512x512.png",
