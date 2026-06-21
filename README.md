@@ -10,6 +10,16 @@ This extension provides developers with clear, real-time visibility into the rat
 
 ---
 
+## Screenshots
+
+### Status Bar and Hover Tooltip
+![Hover Screenshot](https://raw.githubusercontent.com/mdsameersakib/antigravitycli-usage-stats/refs/heads/main/media/hover-screenshot.png)
+
+### Details Panel Webview
+![Details Panel Screenshot](https://raw.githubusercontent.com/mdsameersakib/antigravitycli-usage-stats/refs/heads/main/media/details-screenshot.png)
+
+---
+
 ## Core Capabilities
 
 - **Status Bar Integration**: Displays a clean, minimal status string showing your critical remaining model percentage and time until refresh (e.g. `56% - 1h 55m`).
@@ -67,6 +77,12 @@ Customize the extension settings under the `antigravityStats` prefix:
 ## Note on Weekly Limits
 
 Weekly quota allocations are managed and validated on Google's cloud servers. Since they are not exposed by the local Antigravity server API, this extension excludes them to ensure you only see accurate, local rate limits.
+
+---
+
+## Open Source and Transparency
+
+This extension is 100% open-source! If you want to audit the code or inspect how the local server communication is handled, you can check the complete source code directly on our GitHub repository: [mdsameersakib/antigravitycli-usage-stats](https://github.com/mdsameersakib/antigravitycli-usage-stats).
 
 ---
 

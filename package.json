@@ -6,20 +6,24 @@
   "publisher": "mdsameersakib",
   "author": "Md. Sameer Sakib <mdsameersakib@gmail.com>",
   "icon": "favicon/web-app-manifest-512x512.png",
+  "pricing": "Free",
+  "sponsor": {
+    "url": "https://github.com/sponsors/mdsameersakib"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/mdsameersakib/Lensly-Website.git"
+    "url": "https://github.com/mdsameersakib/antigravitycli-usage-stats.git"
   },
   "bugs": {
-    "url": "https://github.com/mdsameersakib/Lensly-Website/issues"
+    "url": "https://github.com/mdsameersakib/antigravitycli-usage-stats/issues"
   },
-  "homepage": "https://github.com/mdsameersakib/Lensly-Website#readme",
+  "homepage": "https://github.com/mdsameersakib/antigravitycli-usage-stats#readme",
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"
   },
   "categories": [
-    "Other"
+    "Visualization"
   ],
   "activationEvents": [
     "onStartupFinished",
